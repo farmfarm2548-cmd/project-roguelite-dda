@@ -1,0 +1,92 @@
+/**********************************************************************
+ * Google Apps Script — ดึงข้อมูล Telemetry จาก Firebase มาลง Google Sheet
+ * (รันครั้งเดียว ดึงทั้งหมด — 1 แถวต่อ 1 ห้อง ของทุกผู้เล่น/ทุกรอบ)
+ *
+ * วิธีติดตั้ง:
+ * 1) เปิด Google Sheet ใหม่ (พิมพ์ sheets.new ในเบราว์เซอร์)
+ * 2) เมนู Extensions → Apps Script
+ * 3) ลบโค้ดเดิมทั้งหมด → วางโค้ดนี้ → Save (ไอคอนแผ่นดิสก์)
+ * 4) กดปุ่ม Run เลือกฟังก์ชัน importFromFirebase ครั้งแรก → Authorize access (อนุญาต)
+ * 5) กลับมาที่หน้า Sheet จะมีเมนูใหม่ชื่อ "Firebase" ด้านบน
+ *    → กด "นำเข้าข้อมูลตอนนี้" ได้เลยทุกครั้งที่อยากอัปเดต
+ *
+ * เงื่อนไข: Firebase Rules ต้องเปิดให้ ".read": true (ตอนนี้เปิดอยู่แล้ว)
+ **********************************************************************/
+
+var FIREBASE_URL = "https://projectrougelite-default-rtdb.asia-southeast1.firebasedatabase.app";
+var SHEET_NAME   = "Telemetry";
+
+var HEADERS = [
+  "Participant","Sequence","Condition","RunID","ExportedAt","Room","RoomIndex",
+  "C","S","CSBI","BalanceError","InBalance",
+  "Accuracy","ClearTime","DamageTaken","DeathCount","AttemptCount","RoomClear",
+  "EnemySpeed","EnemyAttackPower","EnemySpawnRate","EnemyHP",
+  "EnemySpawnCount","AttackAttempts","SuccessfulHits","Flow"
+];
+
+function importFromFirebase() {
+  // ดึงทั้ง node telemetry จาก Firebase
+  var res  = UrlFetchApp.fetch(FIREBASE_URL + "/telemetry.json");
+  var data = JSON.parse(res.getContentText());
+
+  var rows = [];
+  if (data) {
+    Object.keys(data).forEach(function (pid) {        // แต่ละ participant
+      var runs = data[pid];
+      if (!runs) return;
+      Object.keys(runs).forEach(function (runId) {    // แต่ละ run
+        var sess = runs[runId];
+        if (!sess) return;
+        toList(sess.rooms).forEach(function (r) {      // แต่ละห้อง
+          if (!r) return;
+          rows.push([
+            sess.participantId || pid,
+            sess.sequence || "",
+            sess.condition || "",
+            sess.runId || runId,
+            sess.exportedAt || "",
+            r.room || "",
+            n(r.roomIndex),
+            n(r.C), n(r.S), n(r.CSBI), n(r.balanceError),
+            r.inBalance ? 1 : 0,
+            n(r.accuracy), n(r.clearTime), n(r.damageTaken), n(r.deathCount),
+            n(r.attemptCount),
+            r.roomClear ? 1 : 0,
+            n(r.enemySpeed), n(r.enemyAttackPower), n(r.enemySpawnRate), n(r.enemyHp),
+            n(r.enemySpawnCount), n(r.attackAttempts), n(r.successfulHits),
+            (r.flow === undefined || r.flow === null) ? "" : r.flow
+          ]);
+        });
+      });
+    });
+  }
+
+  // เขียนลงชีต (ล้างของเก่าแล้วเขียนใหม่ทั้งหมด)
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(SHEET_NAME) || ss.insertSheet(SHEET_NAME);
+  sheet.clearContents();
+  sheet.appendRow(HEADERS);
+  if (rows.length > 0) {
+    sheet.getRange(2, 1, rows.length, HEADERS.length).setValues(rows);
+  }
+  SpreadsheetApp.getActiveSpreadsheet().toast("นำเข้าแล้ว " + rows.length + " แถว");
+}
+
+// รองรับทั้งกรณี rooms เป็น array (0,1,2) หรือ object
+function toList(x) {
+  if (!x) return [];
+  if (Object.prototype.toString.call(x) === "[object Array]") {
+    return x.filter(function (v) { return v !== null && v !== undefined; });
+  }
+  return Object.keys(x).map(function (k) { return x[k]; });
+}
+
+function n(v) { return (v === undefined || v === null) ? "" : v; }
+
+// สร้างเมนู "Firebase" ในชีตเพื่อกดรันได้ง่าย
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu("Firebase")
+    .addItem("นำเข้าข้อมูลตอนนี้ (Import now)", "importFromFirebase")
+    .addToUi();
+}

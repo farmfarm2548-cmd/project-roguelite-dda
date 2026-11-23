@@ -1,0 +1,63 @@
+/**********************************************************************
+ * Google Apps Script — รับ Telemetry จาก Unity แล้วเขียนลง Google Sheet
+ *
+ * วิธีติดตั้ง:
+ * 1) เปิด Google Sheet ใหม่ (sheets.new)
+ * 2) เมนู Extensions → Apps Script
+ * 3) ลบโค้ดเดิมทั้งหมด แล้ววางโค้ดนี้ → กด Save (ไอคอนแผ่นดิสก์)
+ * 4) กด Deploy → New deployment → เลือกชนิด "Web app"
+ *      - Description: อะไรก็ได้
+ *      - Execute as: Me (อีเมลคุณ)
+ *      - Who has access: Anyone            ← สำคัญ! ต้องเลือก Anyone
+ *    แล้วกด Deploy → Authorize access (อนุญาตสิทธิ์)
+ * 5) คัดลอก "Web app URL" (ลงท้ายด้วย /exec)
+ * 6) เอา URL ไปวางในช่อง webAppUrl ของ GoogleSheetUploader ใน Unity
+ *    (หรือแก้ค่า default ในไฟล์ GoogleSheetUploader.cs)
+ *
+ * หมายเหตุ: ถ้าแก้โค้ดนี้ภายหลัง ต้อง Deploy → Manage deployments →
+ *           แก้ version เป็น "New version" ทุกครั้ง URL ถึงจะอัปเดต
+ **********************************************************************/
+
+var SHEET_NAME = "Telemetry";
+
+var HEADERS = [
+  "Timestamp","Participant","Sequence","Condition","RunID","Room","RoomIndex",
+  "C","S","CSBI","BalanceError","InBalance",
+  "Accuracy","ClearTime","DamageTaken","DeathCount","AttemptCount","RoomClear",
+  "EnemySpeed","EnemyAttackPower","EnemySpawnRate","EnemyHP",
+  "EnemySpawnCount","AttackAttempts","SuccessfulHits","Flow"
+];
+
+function doPost(e) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName(SHEET_NAME) || ss.insertSheet(SHEET_NAME);
+
+    // เขียนหัวตารางถ้ายังว่าง
+    if (sheet.getLastRow() === 0) {
+      sheet.appendRow(HEADERS);
+    }
+
+    var p = e.parameter || {};
+    var row = HEADERS.map(function (h) {
+      if (h === "Timestamp") return new Date();
+      return (p[h] !== undefined && p[h] !== null) ? p[h] : "";
+    });
+    sheet.appendRow(row);
+
+    return ContentService
+      .createTextOutput(JSON.stringify({ ok: true }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService
+      .createTextOutput(JSON.stringify({ ok: false, error: String(err) }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+// เปิด URL ด้วย GET เพื่อทดสอบว่า deploy สำเร็จ
+function doGet() {
+  return ContentService
+    .createTextOutput("Telemetry endpoint is running.")
+    .setMimeType(ContentService.MimeType.TEXT);
+}
